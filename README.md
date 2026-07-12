@@ -14,6 +14,60 @@ Resources
 
 Load balancer for ChatGPT accounts. Pool multiple accounts, track usage, manage API keys, view everything in a dashboard.
 
+## Samuel's pinned compatibility build
+
+This private mirror preserves the CodexLB build deployed by Samuel on
+2026-07-12. It is pinned to upstream commit
+`b962b3593167d8d137f13063feaeac77f4744db3` (`1.21.0-beta.2`) with a small
+local compatibility patch:
+
+- every Codex-native model entry supplies the fields required by Codex CLI
+  0.142.0, while preserving upstream values;
+- `POST /backend-api/codex/alpha/search` uses the existing authenticated,
+  sticky, pooled-account control proxy;
+- existing Responses, image generation/editing, WebSocket, plugin, shell, and
+  function-tool behavior remains intact.
+
+The Mac deployment was validated with normal responses, actual Codex CLI model
+refresh and shell execution, function tools, a ChatGPT-authenticated GitHub
+plugin invocation, native web search, built-in image generation and editing,
+WebSocket responses, sticky conversation continuity, and natural selection of
+both pooled accounts.
+
+### Private multi-platform image
+
+The `build-patched-image.yml` workflow publishes both `linux/arm64` and
+`linux/amd64` variants to:
+
+```text
+ghcr.io/samochreno/codex-lb-patched:samuel-working-2026-07-12
+```
+
+The package is intended to remain private. Authenticate before pulling:
+
+```bash
+docker login ghcr.io
+```
+
+On Windows PowerShell:
+
+```powershell
+docker volume create codex-lb-data
+docker run -d `
+  --name codex-lb `
+  --restart unless-stopped `
+  -p 1455:1455 `
+  -p 2455:2455 `
+  -v codex-lb-data:/var/lib/codex-lb `
+  ghcr.io/samochreno/codex-lb-patched:samuel-working-2026-07-12
+```
+
+Open `http://localhost:2455`, then add each ChatGPT account through the Accounts
+page. Port `1455` handles the local OAuth callback.
+
+Never commit or publish CodexLB volumes, `store.db`, `encryption.key`, account
+exports, `auth.json`, API keys, OAuth tokens, cookies, or environment files.
+
 | ![dashboard](docs/screenshots/dashboard.jpg) | ![accounts](docs/screenshots/accounts.jpg) |
 |:---:|:---:|
 

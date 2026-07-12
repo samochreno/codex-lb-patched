@@ -839,6 +839,32 @@ async def test_backend_codex_models_entry_has_upstream_fields(async_client):
         "instructions_variables": {"personality_default": ""},
         "approvals": None,
     }
+    assert entry["truncation_policy"] == {"mode": "bytes", "limit": 10_000}
+    assert entry["experimental_supported_tools"] == []
+
+
+@pytest.mark.asyncio
+async def test_backend_codex_models_preserves_upstream_truncation_policy(async_client):
+    registry = get_model_registry()
+    models = [
+        _make_upstream_model(
+            "gpt-5.3-codex",
+            raw={
+                "shell_type": "shell_command",
+                "visibility": "list",
+                "truncation_policy": {"mode": "tokens", "limit": 12_345},
+                "experimental_supported_tools": ["custom_tool"],
+            },
+        ),
+    ]
+    await registry.update({"plus": models, "pro": models})
+
+    resp = await async_client.get("/backend-api/codex/models")
+
+    assert resp.status_code == 200
+    entry = next(m for m in resp.json()["models"] if m["slug"] == "gpt-5.3-codex")
+    assert entry["truncation_policy"] == {"mode": "tokens", "limit": 12_345}
+    assert entry["experimental_supported_tools"] == ["custom_tool"]
 
 
 @pytest.mark.asyncio

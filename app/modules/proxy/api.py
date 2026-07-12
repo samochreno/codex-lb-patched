@@ -543,6 +543,15 @@ async def codex_memories_trace_summarize(
     return await _codex_control_proxy(request, "memories/trace_summarize", context, api_key)
 
 
+@router.post("/alpha/search")
+async def codex_alpha_search(
+    request: Request,
+    context: ProxyContext = Depends(get_proxy_context),
+    api_key: ApiKeyData | None = Security(validate_proxy_api_key),
+) -> Response:
+    return await _codex_control_proxy(request, "alpha/search", context, api_key)
+
+
 @router.post("/realtime/calls")
 async def codex_realtime_calls(
     request: Request,
@@ -2917,6 +2926,11 @@ def _to_codex_model_entry(model: UpstreamModel, *, visibility: str | None = None
     for key, value in raw.items():
         if key not in skip_keys and isinstance(value, (bool, int, float, str, type(None), list, Mapping)):
             extra[key] = value
+
+    # Codex's ModelInfo deserializer requires this field. Upstream account
+    # catalogs have historically omitted it for some otherwise valid models.
+    extra.setdefault("truncation_policy", {"mode": "bytes", "limit": 10_000})
+    extra.setdefault("experimental_supported_tools", [])
 
     # If context_window is overridden, also override max_context_window to match
     effective_cw = _effective_context_window(model)

@@ -517,6 +517,15 @@ async def test_thread_goal_set_uses_active_account_when_budget_selection_is_empt
             {"model": "gpt-5.1", "raw_memories": []},
         ),
         (
+            "/backend-api/codex/alpha/search",
+            "alpha/search",
+            {
+                "id": "search-session",
+                "model": "gpt-5.4",
+                "commands": {"search_query": [{"q": "OpenAI news", "recency": 7}]},
+            },
+        ),
+        (
             "/backend-api/codex/safety/arc",
             "safety/arc",
             {"decision": "allow"},
