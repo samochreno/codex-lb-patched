@@ -354,6 +354,10 @@ from app.modules.proxy._service.observability import (
 from app.modules.proxy._service.rate_limit import (
     _RateLimitMixin,
 )
+from app.modules.proxy._service.realtime_sideband import (
+    _RealtimeSidebandMixin,
+    _RealtimeSidebandPin,
+)
 from app.modules.proxy._service.request_log import (
     _RequestLogMixin,
 )
@@ -910,6 +914,7 @@ class ProxyService(
     _FileOpsMixin,
     _TranscribeMixin,
     _CodexControlMixin,
+    _RealtimeSidebandMixin,
     _CompactMixin,
     _StreamingMixin,
     _WebSocketMixin,
@@ -938,6 +943,8 @@ class ProxyService(
         # never hold stale pins after the upstream upload window closes.
         self._file_account_pins: dict[str, _FilePinEntry] = {}
         self._file_account_pin_lock = asyncio.Lock()
+        self._realtime_sideband_pins: dict[str, _RealtimeSidebandPin] = {}
+        self._realtime_sideband_lock = asyncio.Lock()
         self._http_bridge_lock = anyio.Lock()
         self._work_admission: WorkAdmissionController | None = None
         self._request_log_tasks: set[asyncio.Task[None]] = set()

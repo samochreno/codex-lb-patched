@@ -558,7 +558,34 @@ async def codex_realtime_calls(
     context: ProxyContext = Depends(get_proxy_context),
     api_key: ApiKeyData | None = Security(validate_proxy_api_key),
 ) -> Response:
-    return await _codex_control_proxy(request, "realtime/calls", context, api_key)
+    try:
+        response = await context.service.codex_control_request(
+            "realtime/calls",
+            method=request.method,
+            payload=await request.body(),
+            query_params=list(request.query_params.multi_items()),
+            headers=request.headers,
+            codex_session_affinity=True,
+            api_key=api_key,
+        )
+    except ProxyResponseError as exc:
+        return _logged_error_json_response(request, exc.status_code, exc.payload)
+
+    location = next(
+        (value for key, value in response.headers.items() if key.lower() == "location"),
+        None,
+    )
+    if location and response.selected_account_id:
+        realtime_session_id = location.rstrip("/").rsplit("/", 1)[-1]
+        await context.service.register_realtime_sideband(
+            realtime_session_id,
+            response.selected_account_id,
+        )
+    return Response(
+        content=response.body,
+        status_code=response.status_code,
+        headers=_codex_control_downstream_headers(response.headers),
+    )
 
 
 @router.post("/safety/arc")
@@ -707,6 +734,23 @@ async def responses_websocket(
         api_key=api_key,
         client_ip=resolve_request_client_host(websocket),
         synthesized_turn_state=turn_state if client_turn_state is None else None,
+    )
+
+
+@ws_router.websocket("/{realtime_session_id}")
+async def realtime_sideband_websocket(
+    websocket: WebSocket,
+    realtime_session_id: str,
+    context: ProxyContext = Depends(get_proxy_websocket_context),
+) -> None:
+    denial = await _websocket_firewall_denial_response(websocket)
+    if denial is not None:
+        await websocket.send_denial_response(denial)
+        return
+    await context.service.proxy_realtime_sideband_websocket(
+        websocket,
+        realtime_session_id,
+        websocket.headers,
     )
 
 

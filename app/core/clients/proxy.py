@@ -454,6 +454,7 @@ class CodexControlResponse:
     status_code: int
     body: bytes
     headers: Mapping[str, str]
+    selected_account_id: str | None = None
 
 
 def _should_drop_inbound_header(name: str) -> bool:

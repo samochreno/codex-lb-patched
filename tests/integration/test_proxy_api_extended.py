@@ -19,7 +19,7 @@ from app.core.clients.proxy import ProxyResponseError
 from app.core.utils.sse import CODEX_KEEPALIVE_FRAME, SSE_KEEPALIVE_FRAME
 from app.db.models import Account, AccountStatus, RequestLog
 from app.db.session import SessionLocal
-from app.dependencies import ProxyContext
+from app.dependencies import ProxyContext, get_proxy_service_for_app
 from app.modules.proxy._service.support import _signal_propagated_capacity_startup_ready
 
 pytestmark = pytest.mark.integration
@@ -596,8 +596,12 @@ async def test_codex_control_json_endpoints_forward_upstream(
 
 
 @pytest.mark.asyncio
-async def test_codex_realtime_call_forwards_raw_sdp_and_location(async_client, monkeypatch):
-    await _import_account(async_client, "acc_codex_realtime", "codex-realtime@example.com")
+async def test_codex_realtime_call_forwards_raw_sdp_and_location(async_client, app_instance, monkeypatch):
+    local_account_id = await _import_account(
+        async_client,
+        "acc_codex_realtime",
+        "codex-realtime@example.com",
+    )
     calls = []
 
     async def fake_codex_control_request(
@@ -616,7 +620,7 @@ async def test_codex_realtime_call_forwards_raw_sdp_and_location(async_client, m
         return core_proxy.CodexControlResponse(
             status_code=201,
             body=b"v=answer\r\n",
-            headers={"content-type": "application/sdp", "location": "/v1/realtime/calls/call_123"},
+            headers={"content-type": "application/sdp", "location": "rtc_test_123"},
         )
 
     monkeypatch.setattr(proxy_module, "core_codex_control_request", fake_codex_control_request)
@@ -629,7 +633,7 @@ async def test_codex_realtime_call_forwards_raw_sdp_and_location(async_client, m
 
     assert response.status_code == 201
     assert response.content == b"v=answer\r\n"
-    assert response.headers["location"] == "/v1/realtime/calls/call_123"
+    assert response.headers["location"] == "rtc_test_123"
     assert calls == [
         (
             "realtime/calls",
@@ -643,6 +647,9 @@ async def test_codex_realtime_call_forwards_raw_sdp_and_location(async_client, m
     ]
     assert isinstance(calls[0][6], float)
     assert calls[0][6] > 0
+    pin = await get_proxy_service_for_app(app_instance)._get_realtime_sideband_pin("rtc_test_123")
+    assert pin is not None
+    assert pin.account_id == local_account_id
 
 
 @pytest.mark.asyncio

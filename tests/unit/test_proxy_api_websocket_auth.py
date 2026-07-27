@@ -24,6 +24,34 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.mark.asyncio
+async def test_realtime_sideband_uses_authenticated_session_pin_without_requiring_api_key(monkeypatch):
+    websocket = cast(WebSocket, SimpleNamespace(headers={"user-agent": "Codex Desktop"}))
+    service = SimpleNamespace(proxy_realtime_sideband_websocket=AsyncMock())
+    context = cast(proxy_api_module.ProxyContext, SimpleNamespace(service=service))
+
+    async def allow_firewall(_websocket):
+        return None
+
+    async def fail_api_key_validation(_websocket):
+        raise AssertionError("Realtime sideband must not require a second API-key handshake")
+
+    monkeypatch.setattr(proxy_api_module, "_websocket_firewall_denial_response", allow_firewall)
+    monkeypatch.setattr(proxy_api_module, "_validate_proxy_websocket_request", fail_api_key_validation)
+
+    await proxy_api_module.realtime_sideband_websocket(
+        websocket,
+        "rtc_u2_test",
+        context,
+    )
+
+    service.proxy_realtime_sideband_websocket.assert_awaited_once_with(
+        websocket,
+        "rtc_u2_test",
+        websocket.headers,
+    )
+
+
+@pytest.mark.asyncio
 async def test_validate_proxy_websocket_request_returns_firewall_denial(monkeypatch):
     denial = JSONResponse(
         status_code=403,

@@ -15,7 +15,10 @@ from websockets.http11 import Response
 import app.core.clients.proxy_websocket as proxy_websocket_module
 from app.core.clients.codex import CodexTransportError, CodexWebSocketResult
 from app.core.clients.proxy import ProxyResponseError
-from app.core.clients.proxy_websocket import connect_responses_websocket
+from app.core.clients.proxy_websocket import (
+    connect_realtime_sideband_websocket,
+    connect_responses_websocket,
+)
 from app.core.upstream_proxy import ResolvedProxyEndpoint, ResolvedUpstreamRoute
 
 
@@ -236,6 +239,50 @@ async def test_connect_responses_websocket_uses_websockets_transport(monkeypatch
     assert "Cookie" not in additional_headers
     assert "User-Agent" not in additional_headers
     assert "Origin" not in additional_headers
+
+
+@pytest.mark.asyncio
+async def test_connect_realtime_sideband_websocket_uses_dynamic_path_without_responses_beta(monkeypatch):
+    fake_connection = _FakeConnection()
+    seen: dict[str, object] = {}
+
+    async def fake_websocket_connect(url: str, **kwargs):
+        seen["url"] = url
+        seen["kwargs"] = kwargs
+        return fake_connection
+
+    monkeypatch.setattr(proxy_websocket_module, "websocket_connect", fake_websocket_connect)
+    monkeypatch.setattr(
+        proxy_websocket_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            upstream_base_url="https://chatgpt.com/backend-api",
+            upstream_connect_timeout_seconds=7.0,
+            max_sse_event_bytes=4321,
+            upstream_websocket_trust_env=False,
+        ),
+    )
+
+    websocket = await connect_realtime_sideband_websocket(
+        "rtc_u2_test",
+        {
+            "User-Agent": "Codex CLI Test",
+            "Origin": "https://chatgpt.com",
+        },
+        "access-token",
+        "account-123",
+        allow_direct_egress=True,
+    )
+
+    await websocket.send_bytes(b"audio")
+
+    assert fake_connection.sent == [b"audio"]
+    assert seen["url"] == "wss://api.openai.com/v1/live/rtc_u2_test"
+    kwargs = cast(dict[str, object], seen["kwargs"])
+    additional_headers = cast(dict[str, str], kwargs["additional_headers"])
+    assert additional_headers["Authorization"] == "Bearer access-token"
+    assert additional_headers["chatgpt-account-id"] == "account-123"
+    assert "openai-beta" not in {key.lower() for key in additional_headers}
 
 
 @pytest.mark.asyncio

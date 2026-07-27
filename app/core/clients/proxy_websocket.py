@@ -318,6 +318,8 @@ def _build_upstream_websocket_headers(
     inbound: dict[str, str],
     access_token: str,
     account_id: str | None,
+    *,
+    responses_protocol: bool = True,
 ) -> dict[str, str]:
     headers = filter_inbound_websocket_headers(inbound)
     # ``filter_inbound_websocket_headers`` strips ``x-codex-installation-id`` because it
@@ -352,7 +354,8 @@ def _build_upstream_websocket_headers(
             headers["chatgpt-account-id"] = account_id
         else:
             headers[_CHATGPT_ACCOUNT_ID_HEADER] = account_id
-    _ensure_responses_websocket_beta_header(headers)
+    if responses_protocol:
+        _ensure_responses_websocket_beta_header(headers)
     return headers
 
 
@@ -385,8 +388,8 @@ def _aiohttp_ws_close_code(websocket: Any, message: aiohttp.WSMessage) -> int | 
     return close_code if isinstance(close_code, int) else None
 
 
-def _responses_websocket_url(base_url: str) -> str:
-    parsed = urlparse(f"{base_url.rstrip('/')}/codex/responses")
+def _codex_websocket_url(base_url: str, path: str) -> str:
+    parsed = urlparse(f"{base_url.rstrip('/')}/codex/{path.lstrip('/')}")
     if parsed.scheme == "https":
         scheme = "wss"
     elif parsed.scheme == "http":
@@ -396,24 +399,48 @@ def _responses_websocket_url(base_url: str) -> str:
     return urlunparse(parsed._replace(scheme=scheme))
 
 
-async def connect_responses_websocket(
+def _responses_websocket_url(base_url: str) -> str:
+    return _codex_websocket_url(base_url, "responses")
+
+
+def _realtime_sideband_websocket_url(base_url: str, session_id: str) -> str:
+    parsed = urlparse(f"{base_url.rstrip('/')}/live/{session_id}")
+    if parsed.scheme == "https":
+        scheme = "wss"
+    elif parsed.scheme == "http":
+        scheme = "ws"
+    else:
+        scheme = parsed.scheme
+    return urlunparse(parsed._replace(scheme=scheme))
+
+
+async def _connect_codex_websocket(
+    path: str,
     headers: dict[str, str],
     access_token: str,
     account_id: str | None,
     *,
+    operation: str,
+    responses_protocol: bool,
     base_url: str | None = None,
+    websocket_url: str | None = None,
     route: ResolvedUpstreamRoute | None = None,
     codex_client: CodexClient | None = None,
     allow_direct_egress: bool = False,
 ) -> UpstreamResponsesWebSocket:
     settings = get_settings()
     upstream_base = (base_url or settings.upstream_base_url).rstrip("/")
-    url = _responses_websocket_url(upstream_base)
-    upstream_headers = _build_upstream_websocket_headers(headers, access_token, account_id)
+    url = websocket_url or _codex_websocket_url(upstream_base, path)
+    upstream_headers = _build_upstream_websocket_headers(
+        headers,
+        access_token,
+        account_id,
+        responses_protocol=responses_protocol,
+    )
     require_route_or_direct_egress_opt_in(
         route=route,
         allow_direct_egress=allow_direct_egress,
-        operation="responses websocket",
+        operation=operation,
     )
     if route is not None:
         owns_codex_client = codex_client is None
@@ -532,6 +559,57 @@ async def connect_responses_websocket(
         headers=upstream_headers,
         account_id=account_id,
         direct_egress=allow_direct_egress,
+    )
+
+
+async def connect_responses_websocket(
+    headers: dict[str, str],
+    access_token: str,
+    account_id: str | None,
+    *,
+    base_url: str | None = None,
+    route: ResolvedUpstreamRoute | None = None,
+    codex_client: CodexClient | None = None,
+    allow_direct_egress: bool = False,
+) -> UpstreamResponsesWebSocket:
+    return await _connect_codex_websocket(
+        "responses",
+        headers,
+        access_token,
+        account_id,
+        operation="responses websocket",
+        responses_protocol=True,
+        base_url=base_url,
+        route=route,
+        codex_client=codex_client,
+        allow_direct_egress=allow_direct_egress,
+    )
+
+
+async def connect_realtime_sideband_websocket(
+    session_id: str,
+    headers: dict[str, str],
+    access_token: str,
+    account_id: str | None,
+    *,
+    base_url: str | None = None,
+    route: ResolvedUpstreamRoute | None = None,
+    codex_client: CodexClient | None = None,
+    allow_direct_egress: bool = False,
+) -> UpstreamResponsesWebSocket:
+    sideband_base_url = base_url or "https://api.openai.com/v1"
+    return await _connect_codex_websocket(
+        session_id,
+        headers,
+        access_token,
+        account_id,
+        operation="realtime sideband websocket",
+        responses_protocol=False,
+        base_url=sideband_base_url,
+        websocket_url=_realtime_sideband_websocket_url(sideband_base_url, session_id),
+        route=route,
+        codex_client=codex_client,
+        allow_direct_egress=allow_direct_egress,
     )
 
 

@@ -5,6 +5,7 @@ import logging
 import sys
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import replace
 from typing import Any, NoReturn, Protocol, TypeVar, cast
 
 import aiohttp
@@ -285,7 +286,7 @@ class _CodexControlMixin:
                 response = await _call_control(account)
                 await proxy._load_balancer.record_success(account)
                 log_status = "success"
-                return response
+                return replace(response, selected_account_id=account.id)
             except RefreshError as refresh_exc:
                 if refresh_exc.is_permanent:
                     failed_account = _refresh_error_failed_account(refresh_exc, account)
@@ -312,7 +313,7 @@ class _CodexControlMixin:
                         account, response = failover
                         account_id_value = account.id
                         log_status = "success"
-                        return response
+                        return replace(response, selected_account_id=account.id)
                 if exc.status_code == 401:
                     try:
                         remaining_budget = _remaining_budget_seconds(deadline)
@@ -344,7 +345,7 @@ class _CodexControlMixin:
                             response = await _call_control(account)
                             await proxy._load_balancer.record_success(account)
                             log_status = "success"
-                            return response
+                            return replace(response, selected_account_id=account.id)
                         except ProxyResponseError as retry_exc:
                             await proxy._handle_proxy_error(account, retry_exc)
                             if retry_exc.status_code == 401:
@@ -374,7 +375,7 @@ class _CodexControlMixin:
                                         response = await _call_control(account)
                                         await proxy._load_balancer.record_success(account)
                                         log_status = "success"
-                                        return response
+                                        return replace(response, selected_account_id=account.id)
                                     except ProxyResponseError as failover_exc:
                                         await proxy._handle_proxy_error(account, failover_exc)
                                         raise
