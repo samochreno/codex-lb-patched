@@ -14,10 +14,9 @@ Resources
 
 Load balancer for ChatGPT accounts. Pool multiple accounts, track usage, manage API keys, view everything in a dashboard.
 
-## Samuel's pinned compatibility build
+## Pinned compatibility build
 
-This private mirror preserves the CodexLB build deployed by Samuel on
-2026-07-24. It is pinned to upstream commit
+This repository preserves a CodexLB compatibility build pinned to upstream commit
 `b962b3593167d8d137f13063feaeac77f4744db3` (`1.21.0-beta.2`) with a small
 local compatibility patch:
 
@@ -31,22 +30,22 @@ local compatibility patch:
 - existing Responses, image generation/editing, WebSocket, plugin, shell, and
   function-tool behavior remains intact.
 
-The Mac deployment was validated with normal responses, actual Codex CLI model
+The build was validated with normal responses, Codex CLI model
 refresh and shell execution, function tools, a ChatGPT-authenticated GitHub
 plugin invocation, native web search, built-in image generation and editing,
 WebSocket responses, sticky conversation continuity, natural selection of both
 pooled accounts, and a real Codex Desktop Realtime voice session.
 
-### Private multi-platform image
+### Multi-platform image
 
 The `build-patched-image.yml` workflow publishes both `linux/arm64` and
 `linux/amd64` variants to:
 
 ```text
-ghcr.io/samochreno/codex-lb-patched:samuel-working-2026-07-24
+ghcr.io/samochreno/codex-lb-patched:patched-2026-07-24
 ```
 
-The package is intended to remain private. Authenticate before pulling:
+Authenticate before pulling if the package is private:
 
 ```bash
 docker login ghcr.io
@@ -62,7 +61,7 @@ docker run -d `
   -p 1455:1455 `
   -p 2455:2455 `
   -v codex-lb-data:/var/lib/codex-lb `
-  ghcr.io/samochreno/codex-lb-patched:samuel-working-2026-07-24
+  ghcr.io/samochreno/codex-lb-patched:patched-2026-07-24
 ```
 
 Open `http://localhost:2455`, then add each ChatGPT account through the Accounts
