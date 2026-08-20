@@ -653,9 +653,7 @@ class _InvalidRequestPreviousResponseUpstreamWebSocket(_FakeBridgeUpstreamWebSoc
                         "status": 400,
                         "error": {
                             "type": "invalid_request_error",
-                            "code": "invalid_request_error",
                             "message": "Invalid `previous_response_id`.",
-                            "param": "previous_response_id",
                         },
                     },
                     separators=(",", ":"),

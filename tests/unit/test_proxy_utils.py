@@ -20248,9 +20248,7 @@ async def test_process_upstream_websocket_text_retries_precreated_previous_respo
         "status": 400,
         "error": {
             "type": "invalid_request_error",
-            "code": "invalid_request_error",
             "message": "Invalid `previous_response_id`.",
-            "param": "previous_response_id",
         },
     }
     upstream_text = json.dumps(upstream_payload, separators=(",", ":"))

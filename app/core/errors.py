@@ -71,7 +71,14 @@ def is_previous_response_not_found_message(message: str | None) -> bool:
         return True
     # Newer Codex backends use this shorter message for the same stale-anchor
     # condition. Keep the match exact; the caller also requires the upstream
-    # invalid_request_error code and previous_response_id parameter.
+    # invalid_request_error classification.
+    return normalized.replace("`", "").rstrip(".") == "invalid previous_response_id"
+
+
+def _is_invalid_previous_response_id_message(message: str | None) -> bool:
+    if message is None:
+        return False
+    normalized = " ".join(message.lower().split())
     return normalized.replace("`", "").rstrip(".") == "invalid previous_response_id"
 
 
@@ -98,9 +105,14 @@ def is_previous_response_not_found_error(
 ) -> bool:
     if code == "previous_response_not_found":
         return True
-    if code != "invalid_request_error" or param != "previous_response_id":
+    if code != "invalid_request_error":
         return False
-    return is_previous_response_not_found_message(message)
+    # Current Codex websocket errors omit both code and param inside the error
+    # object; callers normalize error.type into code. Accept a missing param
+    # only for the exact unambiguous short message.
+    if _is_invalid_previous_response_id_message(message):
+        return param in (None, "previous_response_id")
+    return param == "previous_response_id" and is_previous_response_not_found_message(message)
 
 
 def response_failed_event(
