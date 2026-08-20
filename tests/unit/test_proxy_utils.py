@@ -20248,8 +20248,8 @@ async def test_process_upstream_websocket_text_retries_precreated_previous_respo
         "status": 400,
         "error": {
             "type": "invalid_request_error",
-            "code": "previous_response_not_found",
-            "message": "Previous response with id 'resp_anchor' not found.",
+            "code": "invalid_request_error",
+            "message": "Invalid `previous_response_id`.",
             "param": "previous_response_id",
         },
     }

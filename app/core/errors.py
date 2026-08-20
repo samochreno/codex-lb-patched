@@ -67,7 +67,12 @@ def is_previous_response_not_found_message(message: str | None) -> bool:
     if message is None:
         return False
     normalized = " ".join(message.lower().split())
-    return "previous response" in normalized and "not found" in normalized
+    if "previous response" in normalized and "not found" in normalized:
+        return True
+    # Newer Codex backends use this shorter message for the same stale-anchor
+    # condition. Keep the match exact; the caller also requires the upstream
+    # invalid_request_error code and previous_response_id parameter.
+    return normalized.replace("`", "").rstrip(".") == "invalid previous_response_id"
 
 
 def previous_response_id_from_not_found_message(message: str | None) -> str | None:

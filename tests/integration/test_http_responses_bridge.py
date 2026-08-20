@@ -644,8 +644,6 @@ class _AnonymousPreviousResponseNotFoundWithInflightUpstreamWebSocket(_FakeBridg
 class _InvalidRequestPreviousResponseUpstreamWebSocket(_FakeBridgeUpstreamWebSocket):
     async def send_text(self, text: str) -> None:
         self.sent_text.append(text)
-        payload = json.loads(text)
-        previous_response_id = payload.get("previous_response_id")
         await self._messages.put(
             _FakeUpstreamMessage(
                 "text",
@@ -656,7 +654,7 @@ class _InvalidRequestPreviousResponseUpstreamWebSocket(_FakeBridgeUpstreamWebSoc
                         "error": {
                             "type": "invalid_request_error",
                             "code": "invalid_request_error",
-                            "message": f"Previous response with id '{previous_response_id}' not found.",
+                            "message": "Invalid `previous_response_id`.",
                             "param": "previous_response_id",
                         },
                     },

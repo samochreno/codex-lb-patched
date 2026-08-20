@@ -16,8 +16,8 @@ Load balancer for ChatGPT accounts. Pool multiple accounts, track usage, manage 
 
 ## Samuel's pinned compatibility build
 
-This private mirror preserves the CodexLB build deployed by Samuel on
-2026-07-24. It is pinned to upstream commit
+This private mirror preserves Samuel's patched CodexLB deployment. It is pinned
+to upstream commit
 `b962b3593167d8d137f13063feaeac77f4744db3` (`1.21.0-beta.2`) with a small
 local compatibility patch:
 
@@ -28,6 +28,9 @@ local compatibility patch:
 - Codex Desktop Realtime voice keeps call creation and its dynamic sideband
   WebSocket on the same pooled account and relays the sideband through OpenAI's
   direct `/v1/live/{call_id}` transceiver;
+- stale conversation anchors using the newer upstream
+  `Invalid previous_response_id` error contract take the existing safe
+  reconnect-and-replay recovery path;
 - existing Responses, image generation/editing, WebSocket, plugin, shell, and
   function-tool behavior remains intact.
 
@@ -68,11 +71,12 @@ docker run -d `
 Open `http://localhost:2455`, then add each ChatGPT account through the Accounts
 page. Port `1455` handles the local OAuth callback.
 
-Codex Desktop 0.146.0 and later also needs this top-level entry in
+Codex Desktop 0.146.0 and later also needs these top-level entries in
 `%USERPROFILE%\.codex\config.toml`:
 
 ```toml
 experimental_realtime_webrtc_call_base_url = "http://127.0.0.1:2455/backend-api/codex"
+experimental_realtime_ws_base_url = "http://127.0.0.1:2455/backend-api/codex"
 ```
 
 Never commit or publish CodexLB volumes, `store.db`, `encryption.key`, account
