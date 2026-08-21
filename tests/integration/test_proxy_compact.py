@@ -70,8 +70,39 @@ class _JsonResponse:
         return _return_self().__await__()
 
 
+class _SseContent:
+    async def iter_chunked(self, size: int):
+        del size
+        yield (
+            b'data: {"type":"response.output_item.done","output_index":0,'
+            b'"item":{"type":"message","status":"completed",'
+            b'"content":[{"type":"output_text","text":"enc_compact_summary_1"}]}}\n\n'
+            b'data: {"type":"response.completed","response":'
+            b'{"object":"response","id":"resp_compact_1","status":"completed","output":[]}}\n\n'
+        )
+
+
+class _SseResponse:
+    status = 200
+    reason = "OK"
+    headers = {"content-type": "text/event-stream"}
+    content = _SseContent()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    def __await__(self):
+        async def _return_self():
+            return self
+
+        return _return_self().__await__()
+
+
 class _JsonSession:
-    def __init__(self, response: _JsonResponse) -> None:
+    def __init__(self, response: object) -> None:
         self._response = response
         self.calls: list[dict[str, object]] = []
 
@@ -438,17 +469,7 @@ async def test_proxy_compact_success_preserves_compaction_payload(async_client, 
     response = await async_client.post("/api/accounts/import", files=files)
     assert response.status_code == 200
 
-    session = _JsonSession(
-        _JsonResponse(
-            {
-                "object": "response.compaction",
-                "compaction_summary": {
-                    "encrypted_content": "enc_compact_summary_1",
-                    "summary_text": "condensed thread state",
-                },
-            }
-        )
-    )
+    session = _JsonSession(_SseResponse())
 
     @contextlib.asynccontextmanager
     async def lease_session(session_override=None):
@@ -463,14 +484,17 @@ async def test_proxy_compact_success_preserves_compaction_payload(async_client, 
     assert response.status_code == 200
     body = response.json()
     assert body["object"] == "response.compaction"
-    assert body["compaction_summary"] == {
-        "encrypted_content": "enc_compact_summary_1",
-        "summary_text": "condensed thread state",
-    }
-    assert _session_call_url(session).endswith("/codex/responses/compact")
+    assert body["output"] == [
+        {
+            "type": "compaction",
+            "encrypted_content": "enc_compact_summary_1",
+        }
+    ]
+    assert _session_call_url(session).endswith("/codex/responses")
     call_json = _session_call_json(session)
-    assert "stream" not in call_json
-    assert "store" not in call_json
+    assert call_json["input"][-1] == {"type": "compaction_trigger"}
+    assert call_json["stream"] is True
+    assert call_json["store"] is False
 
 
 @pytest.mark.asyncio

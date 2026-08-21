@@ -58,11 +58,14 @@ class _Response:
 
 class _CompactResponse:
     status_code = 200
-    headers = {"content-type": "application/json"}
-    content = b'{"object": "response.compact", "id": "compact_1"}'
-
-    def json(self) -> dict[str, str]:
-        return {"object": "response.compact", "id": "compact_1"}
+    headers = {"content-type": "text/event-stream"}
+    content = (
+        b'data: {"type":"response.output_item.done","output_index":0,'
+        b'"item":{"type":"message","status":"completed",'
+        b'"content":[{"type":"output_text","text":"encrypted-summary"}]}}\n\n'
+        b'data: {"type":"response.completed","response":'
+        b'{"object":"response","id":"compact_1","status":"completed","output":[]}}\n\n'
+    )
 
 
 class _TranscribeResponse:
@@ -279,11 +282,16 @@ async def test_compact_responses_uses_codex_client_when_route_is_resolved(route:
         route_trace=trace,
     )
 
-    assert response.object == "response.compact"
+    assert response.object == "response.compaction"
     assert response.id == "compact_1"
-    assert client.calls[0]["url"].endswith("/backend-api/codex/responses/compact")
+    assert client.calls[0]["url"].endswith("/backend-api/codex/responses")
     assert client.calls[0]["route"] is route
     assert client.calls[0]["json"]["model"] == "gpt-5.2"
+    assert client.calls[0]["json"]["input"][-1] == {"type": "compaction_trigger"}
+    assert client.calls[0]["json"]["store"] is False
+    assert client.calls[0]["json"]["stream"] is True
+    request_headers = {key.lower(): value for key, value in client.calls[0]["headers"].items()}
+    assert request_headers["accept"] == "text/event-stream"
     assert trace.endpoint_id == "ep_1"
 
 
