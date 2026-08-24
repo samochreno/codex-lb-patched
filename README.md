@@ -16,9 +16,9 @@ Load balancer for ChatGPT accounts. Pool multiple accounts, track usage, manage 
 
 ## Pinned compatibility build
 
-This repository preserves a CodexLB compatibility build pinned to upstream commit
-`b962b3593167d8d137f13063feaeac77f4744db3` (`1.21.0-beta.2`) with a small
-local compatibility patch:
+This repository preserves a CodexLB compatibility build based on pinned upstream
+commit `d4b00fd05eaff95e7d5979d4ea08e908ee6774c0` with a small local compatibility
+patch set:
 
 - every Codex-native model entry supplies the fields required by Codex CLI
   0.142.0, while preserving upstream values;
@@ -30,6 +30,9 @@ local compatibility patch:
 - stale conversation anchors using the newer upstream
   `Invalid previous_response_id` error contract take the existing safe
   reconnect-and-replay recovery path;
+- HTTP-to-WebSocket bridge requests have a request-owned first-event deadline,
+  so a silent upstream socket retires itself and releases the response-create
+  gate instead of leaving a compacted task reconnecting behind it;
 - existing Responses, image generation/editing, WebSocket, plugin, shell, and
   function-tool behavior remains intact.
 
@@ -80,6 +83,13 @@ experimental_realtime_ws_base_url = "http://127.0.0.1:2455/backend-api/codex"
 
 Never commit or publish CodexLB volumes, `store.db`, `encryption.key`, account
 exports, `auth.json`, API keys, OAuth tokens, cookies, or environment files.
+
+For an existing Windows Docker installation, run
+`scripts/deploy-patched-windows.ps1` from an elevated PowerShell in this checkout.
+It builds the checked-out revision, validates an isolated sidecar on ports
+`3455/4455`, removes the cloned credential volume, and stops the live container
+only for the final cutover. The previous container remains stopped under a
+dated rollback name.
 
 | ![dashboard](docs/screenshots/dashboard.jpg) | ![accounts](docs/screenshots/accounts.jpg) |
 |:---:|:---:|
