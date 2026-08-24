@@ -33,7 +33,10 @@ if (-not (Test-Path "Dockerfile")) {
 }
 
 $Revision = (git rev-parse HEAD).Trim()
-$LiveVolume = docker inspect $LiveContainer --format '{{range .Mounts}}{{if eq .Destination "/var/lib/codex-lb"}}{{.Name}}{{end}}{{end}}'
+$LiveInspect = docker inspect $LiveContainer | ConvertFrom-Json
+$LiveVolume = $LiveInspect.Mounts |
+    Where-Object Destination -eq "/var/lib/codex-lb" |
+    Select-Object -First 1 -ExpandProperty Name
 if (-not $LiveVolume) {
     throw "The live container does not have a named volume mounted at /var/lib/codex-lb."
 }
