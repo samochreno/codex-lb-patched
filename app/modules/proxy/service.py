@@ -1295,7 +1295,6 @@ class ProxyService(
             queued_count = None
             pending_request_ids: list[str] | None = None
             pending_request_ages_seconds: list[float] | None = None
-            should_retire_stuck_session = False
             if bridge_session is not None:
                 now = time.monotonic()
                 async with bridge_session.pending_lock:
@@ -1304,24 +1303,6 @@ class ProxyService(
                     queued_count = bridge_session.queued_request_count
                 pending_request_ids = [state.request_log_id or state.request_id for state in pending_states]
                 pending_request_ages_seconds = [max(0.0, now - state.started_at) for state in pending_states]
-                threshold_seconds = float(
-                    getattr(
-                        get_settings(),
-                        "http_responses_session_bridge_stuck_gate_retire_after_seconds",
-                        300.0,
-                    )
-                )
-                should_retire_stuck_session = any(
-                    state.transport == _REQUEST_TRANSPORT_HTTP
-                    and not state.skip_request_log
-                    and state.response_create_gate_acquired
-                    and state.awaiting_response_created
-                    and not state.downstream_visible
-                    and state.latency_first_upstream_event_ms is None
-                    and state.latency_response_created_ms is None
-                    and max(0.0, now - state.started_at) >= threshold_seconds
-                    for state in pending_states
-                )
             _log_http_bridge_startup_wait_timeout(
                 stage="response_create_gate",
                 timeout_seconds=timeout_seconds,
@@ -1334,15 +1315,6 @@ class ProxyService(
                 pending_request_ids=pending_request_ids,
                 pending_request_ages_seconds=pending_request_ages_seconds,
             )
-            if bridge_session is not None and should_retire_stuck_session:
-                _record_http_bridge_stuck_retire(
-                    reason="response_create_gate_timeout_stuck_pending",
-                    session=bridge_session,
-                )
-                await self._retire_stale_pending_http_bridge_session(
-                    bridge_session,
-                    detail="response_create_gate_timeout_stuck_pending",
-                )
             raise _http_bridge_startup_wait_timeout_error(
                 "http_bridge_response_create_gate",
                 code="response_create_gate_timeout",

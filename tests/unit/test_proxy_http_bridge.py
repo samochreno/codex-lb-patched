@@ -658,12 +658,11 @@ async def test_http_bridge_activity_snapshot_counts_closed_admission_waiter_as_r
 
 
 @pytest.mark.asyncio
-async def test_response_create_gate_timeout_retires_session_with_old_pending_visible_request(
+async def test_response_create_gate_timeout_does_not_own_pending_request_retirement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = _make_app_settings(
         proxy_admission_wait_timeout_seconds=0.001,
-        http_responses_session_bridge_stuck_gate_retire_after_seconds=300.0,
     )
     monkeypatch.setattr(proxy_service, "get_settings", lambda: settings)
     service = proxy_service.ProxyService(cast(Any, SimpleNamespace()))
@@ -722,8 +721,8 @@ async def test_response_create_gate_timeout_retires_session_with_old_pending_vis
             session.response_create_gate.release()
 
     assert exc_info.value.payload["error"]["code"] == "response_create_gate_timeout"
-    assert retire_calls == ["response_create_gate_timeout_stuck_pending"]
-    assert session.closed is True
+    assert retire_calls == []
+    assert session.closed is False
     assert waiter.response_create_gate is None
     assert waiter.response_create_gate_acquired is False
 
@@ -734,7 +733,6 @@ async def test_response_create_gate_timeout_does_not_retire_visible_active_strea
 ) -> None:
     settings = _make_app_settings(
         proxy_admission_wait_timeout_seconds=0.001,
-        http_responses_session_bridge_stuck_gate_retire_after_seconds=300.0,
     )
     monkeypatch.setattr(proxy_service, "get_settings", lambda: settings)
     service = proxy_service.ProxyService(cast(Any, SimpleNamespace()))
@@ -797,6 +795,63 @@ async def test_response_create_gate_timeout_does_not_retire_visible_active_strea
     assert exc_info.value.payload["error"]["code"] == "response_create_gate_timeout"
     assert retire_calls == []
     assert session.closed is False
+
+
+@pytest.mark.asyncio
+async def test_http_bridge_first_event_watchdog_fails_request_and_releases_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        proxy_service,
+        "get_settings",
+        lambda: _make_app_settings(http_responses_session_bridge_first_event_timeout_seconds=0.001),
+    )
+    service = proxy_service.ProxyService(cast(Any, SimpleNamespace()))
+    request_state = proxy_service._WebSocketRequestState(
+        request_id="req-first-event-timeout",
+        model="gpt-5.2",
+        service_tier=None,
+        reasoning_effort=None,
+        api_key_reservation=None,
+        started_at=time.monotonic(),
+        transport="http",
+        awaiting_response_created=True,
+        response_create_gate_acquired=True,
+    )
+    session = _make_bridge_session(pending_requests=deque([request_state]), queued_request_count=1)
+    await session.response_create_gate.acquire()
+    request_state.response_create_gate = session.response_create_gate
+    failed = asyncio.Event()
+    seen_error: tuple[str, str] | None = None
+
+    async def fail_and_retire(
+        failed_session: proxy_service._HTTPBridgeSession,
+        *,
+        error_code: str,
+        error_message: str,
+    ) -> bool:
+        nonlocal seen_error
+        seen_error = (error_code, error_message)
+        failed_session.closed = True
+        async with failed_session.pending_lock:
+            failed_session.pending_requests.clear()
+        await proxy_service._release_websocket_response_create_gate(
+            request_state,
+            failed_session.response_create_gate,
+        )
+        failed.set()
+        return True
+
+    monkeypatch.setattr(service, "_fail_http_bridge_reader_and_maybe_retire", fail_and_retire)
+
+    service._start_http_bridge_first_event_watchdog(session, request_state)
+    await asyncio.wait_for(failed.wait(), timeout=1.0)
+
+    assert seen_error is not None
+    assert seen_error[0] == "upstream_request_timeout"
+    assert session.closed is True
+    assert session.response_create_gate.locked() is False
+    assert request_state.http_bridge_first_event_watchdog_task is None
 
 
 @pytest.mark.asyncio

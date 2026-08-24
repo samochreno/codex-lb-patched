@@ -115,6 +115,7 @@ from app.modules.proxy._service.observability import (
 from app.modules.proxy._service.support import (
     _HARD_HTTP_BRIDGE_AFFINITY_KINDS,  # noqa: F401
     _WEBSOCKET_FULL_REPLAY_WAIT_POLL_SECONDS,  # noqa: F401
+    _cancel_http_bridge_first_event_watchdog,
     _clear_websocket_request_error_overrides,
     _copy_websocket_route_metadata_from_session,
     _event_type_from_payload,
@@ -244,6 +245,55 @@ def _request_kind_from_headers(headers: Mapping[str, str] | None) -> str:
 
 
 class _HTTPBridgeRequestSubmitMixin:
+    def _start_http_bridge_first_event_watchdog(
+        self: Any,
+        session: "_HTTPBridgeSession",
+        request_state: _WebSocketRequestState,
+    ) -> None:
+        _cancel_http_bridge_first_event_watchdog(request_state)
+        timeout_seconds = float(
+            getattr(
+                _service_get_settings(),
+                "http_responses_session_bridge_first_event_timeout_seconds",
+                60.0,
+            )
+        )
+
+        async def watch() -> None:
+            try:
+                await asyncio.sleep(timeout_seconds)
+                async with session.lifecycle_lock:
+                    async with session.pending_lock:
+                        still_waiting = (
+                            request_state in session.pending_requests
+                            and request_state.awaiting_response_created
+                            and request_state.latency_first_upstream_event_ms is None
+                        )
+                    if not still_waiting:
+                        return
+                    _log_http_bridge_event(
+                        "first_event_timeout",
+                        session.key,
+                        account_id=session.account.id,
+                        model=session.request_model,
+                        detail=f"timeout_seconds={timeout_seconds}",
+                        cache_key_family=session.key.affinity_kind,
+                        model_class=_extract_model_class(session.request_model) if session.request_model else None,
+                    )
+                    await self._fail_http_bridge_reader_and_maybe_retire(
+                        session,
+                        error_code="upstream_request_timeout",
+                        error_message="Upstream websocket did not acknowledge the response request before its deadline",
+                    )
+            finally:
+                if request_state.http_bridge_first_event_watchdog_task is asyncio.current_task():
+                    request_state.http_bridge_first_event_watchdog_task = None
+
+        request_state.http_bridge_first_event_watchdog_task = asyncio.create_task(
+            watch(),
+            name=f"http-bridge-first-event-{request_state.request_id}",
+        )
+
     def _prepare_http_bridge_request(
         self: Any,
         payload: ResponsesRequest,
@@ -712,6 +762,7 @@ class _HTTPBridgeRequestSubmitMixin:
                     admission_waiter_registered = False
                 request_enqueued = True
                 await _send_http_bridge_request_text_with_archive_id(session, request_state, text_data)
+                self._start_http_bridge_first_event_watchdog(session, request_state)
                 session.last_used_at = _service_time().monotonic()
         except ProxyResponseError:
             await self._cleanup_http_bridge_submit_interruption(
@@ -1013,6 +1064,7 @@ class _HTTPBridgeRequestSubmitMixin:
                 session.admission_waiter_count = max(0, session.admission_waiter_count - 1)
             retire_closed_session = session.closed and session.admission_waiter_count == 0
         self._cancel_request_state_api_key_reservation_heartbeat(request_state)
+        _cancel_http_bridge_first_event_watchdog(request_state)
         if request_state.response_create_gate is not None:
             if gate_acquired or request_state.response_create_gate_acquired:
                 await _release_websocket_response_create_gate(request_state, session.response_create_gate)
@@ -1062,6 +1114,7 @@ class _HTTPBridgeRequestSubmitMixin:
         if not detached:
             return False
         self._cancel_request_state_api_key_reservation_heartbeat(request_state)
+        _cancel_http_bridge_first_event_watchdog(request_state)
         await self._release_websocket_request_state_reservation(request_state)
         request_state.api_key_reservation = None
         await self._retire_http_bridge_after_drain_if_ready(session)
@@ -1191,6 +1244,7 @@ class _HTTPBridgeRequestSubmitMixin:
                     request_state.proxy_injected_previous_response_id = False
                     request_state.request_text = retry_text_data
                 await _send_http_bridge_request_text_with_archive_id(session, request_state, retry_text_data)
+                self._start_http_bridge_first_event_watchdog(session, request_state)
             _clear_websocket_request_error_overrides(request_state)
             session.last_used_at = _service_time().monotonic()
             return True
@@ -1248,6 +1302,7 @@ class _HTTPBridgeRequestSubmitMixin:
             await self._reconnect_http_bridge_session(session, request_state=request_state)
             request_text = self._http_bridge_text_with_account_installation_id(session, request_state, request_text)
             await _send_http_bridge_request_text_with_archive_id(session, request_state, request_text)
+            self._start_http_bridge_first_event_watchdog(session, request_state)
             session.last_used_at = _service_time().monotonic()
             return True
         except Exception as exc:
@@ -1315,6 +1370,7 @@ class _HTTPBridgeRequestSubmitMixin:
             await self._reconnect_http_bridge_session(session, request_state=request_state)
             request_text = self._http_bridge_text_with_account_installation_id(session, request_state, request_text)
             await _send_http_bridge_request_text_with_archive_id(session, request_state, request_text)
+            self._start_http_bridge_first_event_watchdog(session, request_state)
             session.last_used_at = _service_time().monotonic()
             return "retried"
         except Exception as exc:
@@ -1383,6 +1439,7 @@ class _HTTPBridgeRequestSubmitMixin:
             )
             retry_text = self._http_bridge_text_with_account_installation_id(session, request_state, retry_text)
             await _send_http_bridge_request_text_with_archive_id(session, request_state, retry_text)
+            self._start_http_bridge_first_event_watchdog(session, request_state)
             session.last_used_at = _service_time().monotonic()
             return True
         except Exception as exc:

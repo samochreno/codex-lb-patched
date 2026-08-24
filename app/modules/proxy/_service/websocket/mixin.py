@@ -302,6 +302,7 @@ from app.modules.proxy._service.support import (
     _REQUEST_TRANSPORT_WEBSOCKET,
     _WEBSOCKET_FULL_REPLAY_WAIT_POLL_SECONDS,  # noqa: F401
     _account_capacity_wait_payload,
+    _cancel_http_bridge_first_event_watchdog,
     _clear_websocket_request_error_overrides,
     _DownstreamWebSocketActivity,
     _event_type_from_payload,
@@ -3852,6 +3853,7 @@ class _WebSocketMixin:
         last_index = len(remaining) - 1
         for index, request_state in enumerate(remaining):
             proxy._cancel_request_state_api_key_reservation_heartbeat(request_state)
+            _cancel_http_bridge_first_event_watchdog(request_state)
             request_error_code = request_state.error_code_override or error_code
             request_error_message = request_state.error_message_override or error_message
             request_error_type = request_state.error_type_override or "server_error"

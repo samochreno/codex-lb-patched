@@ -444,6 +444,7 @@ class _WebSocketRequestState:
     api_key_reservation_last_touch_at: float = field(default_factory=time.monotonic)
     api_key_reservation_heartbeat_stop: asyncio.Event | None = None
     api_key_reservation_heartbeat_task: asyncio.Task[None] | None = None
+    http_bridge_first_event_watchdog_task: asyncio.Task[None] | None = None
     upstream_proxy_route_mode: str | None = None
     upstream_proxy_pool_id: str | None = None
     upstream_proxy_endpoint_id: str | None = None
@@ -460,6 +461,13 @@ class _WebSocketRequestState:
     account_capacity_wait_reason: str | None = None
     account_capacity_wait_started_at: float | None = None
     account_capacity_wait_retry_after_seconds: float | None = None
+
+
+def _cancel_http_bridge_first_event_watchdog(request_state: _WebSocketRequestState) -> None:
+    task = request_state.http_bridge_first_event_watchdog_task
+    request_state.http_bridge_first_event_watchdog_task = None
+    if task is not None and task is not asyncio.current_task() and not task.done():
+        task.cancel()
 
 
 @dataclass(frozen=True, slots=True)

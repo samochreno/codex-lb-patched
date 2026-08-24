@@ -98,6 +98,7 @@ from app.modules.proxy._service.observability import (
 from app.modules.proxy._service.support import (
     _HARD_HTTP_BRIDGE_AFFINITY_KINDS,  # noqa: F401
     _WEBSOCKET_FULL_REPLAY_WAIT_POLL_SECONDS,  # noqa: F401
+    _cancel_http_bridge_first_event_watchdog,
     _event_type_from_payload,
     _HTTPBridgeSession,
     _record_response_event,
@@ -397,6 +398,7 @@ class _HTTPBridgeUpstreamEventsMixin:
             _archive_http_bridge_upstream_text(session, original_text, matched_request_state)
 
             if matched_request_state is not None:
+                _cancel_http_bridge_first_event_watchdog(matched_request_state)
                 now = _service_time().monotonic()
                 if matched_request_state.latency_first_upstream_event_ms is None:
                     matched_request_state.latency_first_upstream_event_ms = int(
