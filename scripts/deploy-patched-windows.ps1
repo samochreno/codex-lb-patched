@@ -10,8 +10,16 @@ $CandidateVolume = "codex-lb-first-event-test-20260824"
 $LiveWasStopped = $false
 
 function Remove-Candidate {
-    docker rm -f $CandidateContainer 2>$null | Out-Null
-    docker volume rm $CandidateVolume 2>$null | Out-Null
+    if (Test-Container $CandidateContainer) {
+        docker rm -f $CandidateContainer | Out-Null
+    }
+    if (docker volume ls --quiet --filter "name=^${CandidateVolume}$") {
+        docker volume rm $CandidateVolume | Out-Null
+    }
+}
+
+function Test-Container([string]$Name) {
+    return [bool](docker container ls --all --quiet --filter "name=^${Name}$")
 }
 
 function Wait-Healthy([int]$Port) {
@@ -40,7 +48,7 @@ $LiveVolume = $LiveInspect.Mounts |
 if (-not $LiveVolume) {
     throw "The live container does not have a named volume mounted at /var/lib/codex-lb."
 }
-if (docker container inspect $RollbackContainer 2>$null) {
+if (Test-Container $RollbackContainer) {
     throw "Rollback container $RollbackContainer already exists. Rename or remove it before deploying."
 }
 
@@ -91,8 +99,10 @@ try {
     Write-Host "Rollback container retained as $RollbackContainer"
 } catch {
     if ($LiveWasStopped) {
-        docker rm -f $LiveContainer 2>$null | Out-Null
-        if (docker container inspect $RollbackContainer 2>$null) {
+        if (Test-Container $LiveContainer) {
+            docker rm -f $LiveContainer | Out-Null
+        }
+        if (Test-Container $RollbackContainer) {
             docker rename $RollbackContainer $LiveContainer
             docker update --restart unless-stopped $LiveContainer | Out-Null
             docker start $LiveContainer | Out-Null
