@@ -1,7 +1,8 @@
 param(
     [string]$LiveContainer = "codex-lb",
     [string]$ImageTag = "codex-lb:patched-first-event-20260824",
-    [string]$RollbackContainer = "codex-lb-pre-first-event-20260824"
+    [string]$RollbackContainer = "codex-lb-pre-first-event-20260824",
+    [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,6 +21,12 @@ function Remove-Candidate {
 
 function Test-Container([string]$Name) {
     return [bool](docker container ls --all --quiet --filter "name=^${Name}$")
+}
+
+function Assert-DockerSucceeded([string]$Operation) {
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker failed while ${Operation}."
+    }
 }
 
 function Wait-Healthy([int]$Port) {
@@ -52,14 +59,27 @@ if (Test-Container $RollbackContainer) {
     throw "Rollback container $RollbackContainer already exists. Rename or remove it before deploying."
 }
 
-Write-Host "Building $ImageTag from $Revision"
-docker build `
-    --label "org.opencontainers.image.revision=$Revision" `
-    --label "org.opencontainers.image.source=https://github.com/samochreno/codex-lb-patched" `
-    -t $ImageTag .
+if ($SkipBuild) {
+    docker image inspect $ImageTag | Out-Null
+    Assert-DockerSucceeded "checking the preloaded image"
+    $ImageRevision = docker image inspect $ImageTag --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+    Assert-DockerSucceeded "reading the preloaded image revision"
+    if ($ImageRevision.Trim() -ne $Revision) {
+        throw "Preloaded image revision $ImageRevision does not match checkout $Revision."
+    }
+    Write-Host "Using preloaded $ImageTag from $Revision"
+} else {
+    Write-Host "Building $ImageTag from $Revision"
+    docker build `
+        --label "org.opencontainers.image.revision=$Revision" `
+        --label "org.opencontainers.image.source=https://github.com/samochreno/codex-lb-patched" `
+        -t $ImageTag .
+    Assert-DockerSucceeded "building the candidate image"
+}
 
 Remove-Candidate
 docker volume create $CandidateVolume | Out-Null
+Assert-DockerSucceeded "creating the candidate volume"
 try {
     # The source is mounted read-only. REINDEX repairs the copied SQLite index
     # snapshot if the live WAL changes while Docker copies the files.
@@ -68,6 +88,7 @@ try {
         -v "${CandidateVolume}:/to" `
         alpine:3.22 sh -c `
         'apk add --no-cache sqlite >/dev/null && cp -a /from/. /to/ && sqlite3 /to/store.db "REINDEX; PRAGMA quick_check;"' | Out-Host
+    Assert-DockerSucceeded "cloning the live volume"
 
     docker run -d `
         --name $CandidateContainer `
@@ -76,6 +97,7 @@ try {
         -p 3455:2455 `
         -v "${CandidateVolume}:/var/lib/codex-lb" `
         $ImageTag | Out-Null
+    Assert-DockerSucceeded "starting the isolated candidate"
     Wait-Healthy 3455
     Write-Host "Isolated candidate is healthy. Removing duplicated credentials."
 } finally {
