@@ -62,8 +62,9 @@ if (Test-Container $RollbackContainer) {
 if ($SkipBuild) {
     docker image inspect $ImageTag | Out-Null
     Assert-DockerSucceeded "checking the preloaded image"
-    $ImageRevision = docker image inspect $ImageTag --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+    $ImageInspect = docker image inspect $ImageTag | ConvertFrom-Json
     Assert-DockerSucceeded "reading the preloaded image revision"
+    $ImageRevision = $ImageInspect.Config.Labels.'org.opencontainers.image.revision'
     if ($ImageRevision.Trim() -ne $Revision) {
         throw "Preloaded image revision $ImageRevision does not match checkout $Revision."
     }
